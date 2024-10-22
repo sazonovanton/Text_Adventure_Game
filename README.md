@@ -53,7 +53,9 @@ Enjoy your unique, AI-crafted adventure! 🌟🗺️🐉
 - 🔼🔽 Use **arrow keys** to navigate options
 - ↩️ Press **Enter** to confirm your choice
 - ⇥ Hit **Tab** to input a custom action
-- 🛑 Press **Ctrl+C** to exit the game safely
+- 🛑 Press **Ctrl+C** to exit the game safely  
+
+![Example](https://i.imgur.com/bhBCcjV.gif)
 
 ## 📊 Game Data and Logs
 
