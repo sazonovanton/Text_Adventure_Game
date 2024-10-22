@@ -133,6 +133,7 @@ def call_openai_api(game_state, scene_data, player_info, inventory, selected_opt
     try:
         response = client.chat.completions.create(
             extra_headers={
+                "HTTP-Referer": "https://github.com/sazonovanton/Text_Adventure_Game",  # For openrouter.ai
                 "X-Title": "Text Adventure Game", # For openrouter.ai
             },
             model=MODEL_NAME,
