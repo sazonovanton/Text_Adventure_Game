@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Logs
+logs/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Game specific files
+*.json
+!game_data.json
+*.md
+!README.md

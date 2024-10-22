@@ -1,0 +1,20 @@
+{
+  "player_info": {
+    "name": "Hero",
+    "health": "❤️❤️❤️ ",
+    "money": 100,
+    "location": "Forest"
+  },
+  "inventory": [
+    "Map",
+    "Flashlight",
+    "Rope"
+  ],
+  "current_scene": "start",
+  "character_background": {
+    "history": "You are an experienced traveler who grew up in a small village on the edge of the forest. Since childhood, you have been attracted to the mysteries and enigmas of the surrounding world.",
+    "interests": ["Exploring uncharted lands", "Studying ancient artifacts", "Solving riddles"],
+    "skills": ["Orienteering", "Wilderness survival", "Basic knowledge of ancient languages"],
+    "goal": "Find the legendary artifact you learned about from an old book found in the attic of your house."
+  }
+}
