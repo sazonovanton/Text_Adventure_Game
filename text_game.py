@@ -65,6 +65,7 @@ def parse_color_tags(text):
             color_code = getattr(Fore, color.upper(), Fore.WHITE)
         return f"{color_code}{content}{Fore.RESET}"
 
+    text = text.replace("<color='", "<color=\"").replace("'>", "\">")
     return re.sub(r'<color="(\w+)">(.*?)</color>', replace_color, text)
 
 def display_header(player_info, inventory):
@@ -80,6 +81,7 @@ def display_scene(scene_data, player_info, inventory, selected_option, last_choi
     clear_screen()
     display_header(player_info, inventory)
     if last_choice:
+        last_choice = re.sub(r'<color="(\w+)">(.*?)</color>', r'\2', last_choice)
         print(f"\n{Fore.CYAN}Previous choice: {last_choice}{Style.RESET_ALL}")
     print(f"\n{parse_color_tags(scene_data['text'])}")
     print()
@@ -124,6 +126,52 @@ def loading_animation():
     sys.stdout.write("\r" + " " * 20 + "\r")  # Clear the loading message
     sys.stdout.flush()
 
+def update_action_history(action_history, user_action, model_response):
+    """Update action history with both user action and model response"""
+    # Add user action
+    action_history.append({
+        "type": "user_action",
+        "text": user_action
+    })
+    # Add model response
+    action_history.append({
+        "type": "model_response",
+        "text": model_response['text'] if isinstance(model_response, dict) and 'text' in model_response else str(model_response)
+    })
+    # Keep only last 6 items (3 pairs of user actions and model responses)
+    while len(action_history) > 6:
+        action_history.pop(0)
+
+def get_system_prompt(game_state, memory, character_background, formatted_actions):
+    return (
+        "You are a text-based adventure game. Respond with a JSON object containing:\n"
+        '- "text" (scene description)\n'
+        '- "options" (array of choices with "text" and "next_scene" properties)\n'
+        '- "changes" (modifications to player_info or inventory. Example: {"inventory": {"add": ["key"], "remove": ["potion"], "player_info": {"loaction": "tavern"}})\n'
+        '- "character_background" (updates to the character background information)\n'
+        "You can modify the player's inventory by adding or removing items.\n"
+        "You can change any information in the player_info.\n"
+        "You can update the character_background to reflect character development or new information.\n"
+        "Use color tags like <color=\"red\">text</color> to highlight only specific important words or phrases, not entire paragraphs.\n"
+        'The "memory" field should contain a concise summary of the game session, including:\n'
+        "- Key plot points and events that have occurred\n"
+        "- Character development and important decisions made by the player\n"
+        "- Current goals or objectives the player is pursuing\n"
+        "- Potential future plot directions or challenges\n"
+        "- Any significant changes in the game world or relationships with NPCs\n"
+        "Do not include specific game mechanics like health points or inventory items in the memory.\n"
+        "Focus on creating a narrative summary that captures the essence of the story and the player's journey.\n\n"
+        f"Current game state:\n{json.dumps(game_state, ensure_ascii=False, indent=2)}\n\n"
+        f"Current memory:\n{memory}\n\n"
+        f"Current Character Background (not visible to the player):\n{json.dumps(character_background, ensure_ascii=False, indent=2)}\n\n"
+        "Use this background information to inform the character's actions, dialogue, and the overall narrative, but do not explicitly mention it to the player.\n"
+        "Update the character_background if significant character development occurs or new information about the character is revealed.\n\n"
+        f"Last three actions:\n{chr(10).join(formatted_actions[-6:])}\n\n"
+        "Use data to maintain continuity and context in the story.\n"
+        "To end the game, include an 'end_game' field in the response with a value of 'true'.\n"
+        "RETURN JSON ONLY. Do not include any other text in the response."
+    )
+
 def call_openai_api(game_state, scene_data, player_info, inventory, selected_option, last_choice, memory, character_background, action_history):
     global loading_animation_active
     loading_animation_active = True
@@ -131,44 +179,34 @@ def call_openai_api(game_state, scene_data, player_info, inventory, selected_opt
     animation_thread.start()
 
     try:
+        # Format action history for the prompt
+        formatted_actions = []
+        for action in action_history:
+            action_type = "User" if action["type"] == "user_action" else "Game"
+            formatted_actions.append(f"{action_type}: {action['text']}")
+
+        messages = [
+            {
+                "role": "system",
+                "content": get_system_prompt(game_state, memory, character_background, formatted_actions)
+            },
+            {
+                "role": "user",
+                "content": last_choice if last_choice else ""  # Pass only the user's choice as text
+            }
+        ]
+        
+        if DEBUG:
+            with open("logs/debug_messages.json", 'w', encoding='utf-8') as f:
+                json.dump(messages, f, ensure_ascii=False, indent=2)
+        
         response = client.chat.completions.create(
             extra_headers={
                 "HTTP-Referer": "https://github.com/sazonovanton/Text_Adventure_Game",  # For openrouter.ai
                 "X-Title": "Text Adventure Game", # For openrouter.ai
             },
             model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": f"""You are a text-based adventure game. Respond with a JSON object containing:
-                - 'text' (scene description)
-                - 'options' (array of choices with 'text' and 'next_scene' properties)
-                - 'changes' (modifications to player_info or inventory)
-                - 'memory' (a narrative summary of the game session)
-                - 'character_background' (updates to the character's background information)
-                You can modify the player's inventory by adding or removing items.
-                You can change any information in the player_info.
-                You can update the character_background to reflect character development or new information.
-                Use color tags like <color="red">text</color> to highlight only specific important words or phrases, not entire paragraphs.
-                The 'memory' field should contain a concise summary of the game session, including:
-                - Key plot points and events that have occurred
-                - Character development and important decisions made by the player
-                - Current goals or objectives the player is pursuing
-                - Potential future plot directions or challenges
-                - Any significant changes in the game world or relationships with NPCs
-                Do not include specific game mechanics like health points or inventory items in the memory.
-                Focus on creating a narrative summary that captures the essence of the story and the player's journey.
-                
-                Current Character Background (not visible to the player):
-                {json.dumps(character_background, ensure_ascii=False, indent=2)}
-                
-                Use this background information to inform the character's actions, dialogue, and the overall narrative, but do not explicitly mention it to the player.
-                Update the character_background if significant character development occurs or new information about the character is revealed.
-                
-                Last three actions:
-                {json.dumps(action_history[-3:], ensure_ascii=False, indent=2)}
-                
-                Use these last actions to maintain continuity and context in the story."""},
-                {"role": "user", "content": json.dumps({"game_state": game_state, "memory": memory})}
-            ]
+            messages=messages,
         )
         content = response.choices[0].message.content
         if DEBUG:
@@ -176,15 +214,25 @@ def call_openai_api(game_state, scene_data, player_info, inventory, selected_opt
         
         # Remove code block markers if present
         content = re.sub(r'^```(?:json|)\s*|\s*```$', '', content.strip())
+        # Remove leading and trailing ` characters if present
+        content = content.strip('`')
         
         try:
             parsed_content = json.loads(content)
             return parsed_content
         except json.JSONDecodeError as json_err:
             print(f"\nError: Invalid JSON response from API\nResponse content: {content}\nJSON Error: {json_err}")
+            error_log_filename = f"logs/error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            with open(error_log_filename, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Response content saved to file: {error_log_filename}")
             sys.exit(1)
     except Exception as e:
         print(f"\nOpenAI API error: {e}")
+        error_log_filename = f"logs/error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        with open(error_log_filename, 'w', encoding='utf-8') as f:
+            f.write(str(e))
+        print(f"Error details saved to file: {error_log_filename}")
         sys.exit(1)
     finally:
         loading_animation_active = False
@@ -196,11 +244,13 @@ def apply_changes(player_info, inventory, changes):
             player_info.update(changes['player_info'])
         if 'inventory' in changes:
             if 'add' in changes['inventory']:
-                inventory.extend(changes['inventory']['add'])
+                if changes['inventory']['add'] != []:
+                    inventory.extend(changes['inventory']['add'])
             if 'remove' in changes['inventory']:
-                for item in changes['inventory']['remove']:
-                    if item in inventory:
-                        inventory.remove(item)
+                if changes['inventory']['remove'] != []:
+                    for item in changes['inventory']['remove']:
+                        if item in inventory:
+                            inventory.remove(item)
 
 def main():
     game_data = load_game_data(os.getenv('GAME_DATA_FILE', 'game_data.json'))
@@ -261,19 +311,21 @@ def main():
                         custom_input = None
             
             if custom_input:
-                game_state["custom_response"] = custom_input
                 last_choice = custom_input
             else:
                 chosen_option = scene_data['options'][selected_option]
                 last_choice = chosen_option['text']
             
-            action_history.append(last_choice)
-            if len(action_history) > 3:
-                action_history.pop(0)
+            # Update action history with user's choice
+            update_action_history(action_history, last_choice, scene_data)
             
             api_response = call_openai_api(game_state, scene_data, player_info, inventory, selected_option, last_choice, memory, character_background, action_history)
             scene_data = {k: v for k, v in api_response.items() if k not in ['memory', 'character_background']}
             memory = api_response.get('memory', memory)
+            
+            # Update action history with model's response
+            update_action_history(action_history, last_choice, api_response)
+            
             if 'character_background' in api_response:
                 new_background = api_response['character_background']
                 if new_background != character_background:
